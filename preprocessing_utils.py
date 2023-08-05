@@ -32,7 +32,7 @@ def extract_latency_features_from_df(dataframe: pd.DataFrame,
     participant_id = dataframe[f'{participant_id_col_name}'].unique()[0]
     section_id = dataframe[f'{test_section_id_col_name}'].unique()[0]
 
-    
+        
     dataframe = dataframe.copy()
 
     for col in [PT_col_name, RT_col_name]:
