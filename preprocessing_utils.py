@@ -32,8 +32,23 @@ def extract_latency_features_from_df(dataframe: pd.DataFrame,
     participant_id = dataframe[f'{participant_id_col_name}'].unique()[0]
     section_id = dataframe[f'{test_section_id_col_name}'].unique()[0]
 
-        
+    
     dataframe = dataframe.copy()
+    
+    ### To Ignore edge cases with bugged input
+    if any(dataframe.isna().sum().drop('LETTER') > 1):
+        output_dict = dict(
+        participant_id = participant_id,
+        section_id = section_id,
+        keycode_ids = dataframe[f'{keycode_col_name}'].tolist(),
+        hl = hl,
+        il = il,
+        pl = pl,
+        rl = rl 
+        )
+        
+    
+    
 
     for col in [PT_col_name, RT_col_name]:
         dataframe[f'{col}_lag'] = dataframe[f'{col}'].shift(1)
