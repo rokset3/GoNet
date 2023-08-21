@@ -92,13 +92,13 @@ class LSTMCell(nn.Module):
         
     def reset_parameters(self):
 
-        init.orthogonal(self.weight_ih.data)
+        init.orthogonal_(self.weight_ih.data)
         weight_hh_data = torch.eye(self.hidden_size)
         weight_hh_data = weight_hh_data.repeat(1, 4)
         self.weight_hh.data.set_(weight_hh_data)
         # The bias is just set to zero vectors.
         if self.use_bias:
-            init.constant(self.bias.data, val=0)
+            init.constant_(self.bias.data, val=0)
             
     def forward(self, input_, hx):
         h_0, c_0 = hx
@@ -145,13 +145,13 @@ class BNLSTMCell(nn.Module):
         
     def reset_parameters(self):
         
-        init.orthogonal(self.weight_ih.data)
+        init.orthogonal_(self.weight_ih.data)
         
         weight_hh_data = torch.eye(self.hidden_size)
         weight_hh_data = weight_hh_data.repeat(1, 4)
         self.weight_hh.data.set_(weight_hh_data)
         
-        init.constant(self.bias.data, val=0)
+        init.constant_(self.bias.data, val=0)
         
         # Initialization of BN parameters.
         self.bn_ih.reset_parameters()
