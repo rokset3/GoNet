@@ -1,0 +1,31 @@
+dataset_path: 'rokset3/keystrokes136M_normalized_features'
+train_batch_size: 2048
+train_sample_size: 
+do_train: True
+do_eval: False
+val_batch_size: 4096
+val_sample_size: 8192
+save_every_k_epochs: 5
+log_to: 'wandb'
+project_name: 'GoNet'
+entity: 'zholamantemirlan'
+experiment_name: 'test_run1'
+model_name: 'GoNet_128'
+save_dir: 'runs'
+epochs: 200
+hf_token: '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'
+device: 'cuda:0'
+verbose_loss_on_epoch: False
+lr: 0.001
+weight_decay: 0.01
+model_params:
+    input_size: 5
+    hidden_size: 128
+    num_layers: 2
+    use_bias: True
+    batch_first: True
+    dropout: 0.5
+    max_length: 256
+loss_params:
+    margin: 1.5
+    
