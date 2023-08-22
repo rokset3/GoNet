@@ -6,8 +6,8 @@ from huggingface_hub import login
 import torch.optim as optim
 
 from classes.models import get_bnlstm_model
-from classes.datasets import get_dataloader
 from classes.trainers import TripletLossTrainer
+from classes.datasets import get_dataloader, get_dataloader_with_bucketing
 
 
 
@@ -21,12 +21,20 @@ def main():
     model = model.to(config['device'])
     
     if config['do_train']:
-        train_dl = get_dataloader(config, 'train', sample=config['train_sample_size'])
+        if config['padding'] == 'constant':
+            print(f"Using constant padding of len {config['model_params']['max_length']}")
+            train_dl = get_dataloader(config, 'train', sample=config['train_sample_size'])
+        elif config['padding'] == 'collate':
+            print(f"Using batch padding")
+            train_dl = get_dataloader_with_bucketing(config, 'train', sample=config['train_sample_size'])
     else:
         print('do_train is False, exit training...')
         exit()
     if config['do_eval']:
-        val_dl = get_dataloader(config, 'test', sample=config['val_sample_size'])
+        if config['padding'] == 'constant':
+            val_dl = get_dataloader(config, 'test', sample=config['val_sample_size'])
+        elif config['padding'] == 'collate':
+            val_dl = get_dataloader_with_bucketing(config, 'test', sample=config['val_sample_size'])
     else:
         val_dl = None
     

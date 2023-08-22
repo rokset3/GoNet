@@ -1,4 +1,1 @@
-data/files
-__pycache__ 
-.ipynb_checkpoints/
-
+data/files__pycache__ .ipynb_checkpoints/runs/wandb/

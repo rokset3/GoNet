@@ -8,8 +8,9 @@ from tqdm import tqdm
 import wandb
 import torch
 import torch.nn as nn 
-from torch.cuda.amp import autocast, GradScaler
+from einops import rearrange
 from transformers import AdamW
+from torch.cuda.amp import autocast, GradScaler
 
 from classes.losses import TripletLoss 
 
@@ -73,12 +74,17 @@ class TripletLossTrainer:
         train_loss = 0
         epoch_steps = epoch * self.train_steps_in_epoch
         
-        for step, batch in enumerate(tqdm(self.train_dataloader, desc="Training", leave=False)):
+        for step, (anchor_features,
+                   positive_features,
+                   negative_features,
+                   anchor_len,
+                   positive_len,
+                   negative_len) in enumerate(tqdm(self.train_dataloader, desc="Training", leave=False)):
             global_step = epoch_steps + step
             
-            anchor_features = batch['anchor_features'].to(self.device)
-            positive_features = batch['positive_features'].to(self.device)
-            negative_features = batch['negative_features'].to(self.device)
+            anchor_features = rearrange(anchor_features, 'b h s -> b s h').to(self.device)
+            positive_features = rearrange(positive_features, 'b h s -> b s h').to(self.device)
+            negative_features = rearrange(negative_features, 'b h s -> b s h').to(self.device)
             
             with autocast():
                 anchor_out = self.model(anchor_features)[0][-1]
@@ -105,11 +111,16 @@ class TripletLossTrainer:
         test_loss = 0
         epoch_steps = epoch * self.val_steps_in_epoch
         with torch.no_grad():
-            for step, batch in enumerate(tqdm(self.valid_dataloader, desc='Evaluation', leave=False)):
+            for step, (anchor_features,
+                       positive_features,
+                       negative_sample,
+                       anchor_len,
+                       positive_len,
+                       negative_len) in enumerate(tqdm(self.valid_dataloader, desc='Evaluation', leave=False)):
                 
-                anchor_features = batch['anchor_features'].to(self.device)
-                positive_features = batch['positive_features'].to(self.device)
-                negative_features = batch['negative_features'].to(self.device)
+                anchor_features = rearrange(anchor_features, 'b h s -> b s h').to(self.device)
+                positive_features = rearrange(positive_features, 'b h s -> b s h').to(self.device)
+                negative_features = rearrange(negative_features, 'b h s -> b s h').to(self.device)
                 
                 anchor_out = self.model(anchor_features)[0][:-1]
                 positive_out = self.model(positive_features)[0][:-1]
