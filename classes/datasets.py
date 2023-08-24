@@ -10,8 +10,55 @@ from einops import rearrange
 from datasets import load_dataset
 from torch.utils.data import Dataset, DataLoader
 
+def bucket_collate_fn(data, n_features=5):
+    def _reshape_features(data, pos, features, max_len):
+        for i in range(len(data)):
+            j, k = data[i][pos].size(0), data[i][pos].size(1)
+            features[i] = torch.cat([data[i][pos], torch.zeros((j, max_len - k))], dim=-1)
 
-
+        return features
+    '''
+    data = List[dict]
+    '''
+    (_,
+     _,
+     _,
+     anchor_len,
+     positive_len,
+     negative_len) = zip(*data)
+    
+    anchor_max_len = max(anchor_len)
+    positive_max_len = max(positive_len)
+    negative_max_len = max(negative_len)
+    
+    n_features = n_features
+    
+    anchor_features = torch.zeros((len(data), n_features, anchor_max_len))
+    positive_features = torch.zeros((len(data), n_features, positive_max_len))
+    negative_features = torch.zeros((len(data),  n_features, negative_max_len))
+    
+    anchor_pos, positive_pos, negative_pos = 0, 1, 2
+    #for i in range(len(data)):
+    #    j, k = data[i][anchor_pos].size(0), data[i][anchor_pos].size(1)
+    #    anchor_features[i] = torch.cat([data[i][achor_pos], torch.zeros((anchor_max_len - j, k))])
+     
+    anchor_features = _reshape_features(data, anchor_pos, anchor_features, anchor_max_len)
+    positive_features = _reshape_features(data, positive_pos, positive_features, positive_max_len)
+    negative_features = _reshape_features(data, negative_pos, negative_features, negative_max_len)
+    
+    
+    anchor_len = torch.tensor(anchor_len)
+    positive_len = torch.tensor(positive_len)
+    negative_len = torch.tensor(negative_len)
+    
+    return (
+        anchor_features.float(),
+        positive_features.float(),
+        negative_features.float(),
+        anchor_len.long(),
+        positive_len.long(),
+        negative_len.long(),
+    )
 
 def get_dataset_for_bucketing(config, split='train', sample=None):
     ds = load_dataset(config['dataset_path'], split=split)
@@ -22,6 +69,7 @@ def get_dataset_for_bucketing(config, split='train', sample=None):
     return TripletLossDatasetFromPandasDataFrame(ds, config['model_params']['max_length'])
     
 def get_dataloader_with_bucketing(config, split='train', sample=None):
+    
     ds = get_dataset_for_bucketing(config, split, sample)
     if split =='train':
         dl = DataLoader(ds,
@@ -36,7 +84,6 @@ def get_dataloader_with_bucketing(config, split='train', sample=None):
                         num_workers=config['dataloader_num_workers'])
     return dl
     
-
 def get_dataset(config, split='train', sample=None):
     ds = load_dataset(config['dataset_path'], split=split)
     if sample is not None:
@@ -76,16 +123,13 @@ class CustomTripletLossDatasetFromPandasDataFrame(Dataset):
         self.index = df.index.values
         self.labels = df[label_col_name].values
     
-    
     def __len__(self, ):
         return len(self.df)
-    
     
     def _pad_sequences(self, sequence):
         padded_sequence = np.zeros(self.max_length)
         padded_sequence[:len(sequence)] = sequence
         return padded_sequence
-    
     
     def _getitem(self, idx):
         label = torch.tensor(self.df.iloc[idx][self.label_col_name])
@@ -118,7 +162,6 @@ class CustomTripletLossDatasetFromPandasDataFrame(Dataset):
                 ))
         return rearrange(features, 's h -> h s')
     
-    
     def __getitem__(self, curr_idx):
         anchor_sample = self._getitem(curr_idx)
         anchor_label = self.labels[curr_idx]
@@ -137,7 +180,6 @@ class CustomTripletLossDatasetFromPandasDataFrame(Dataset):
             positive_features = positive_sample,
             negative_features = negative_sample,
         )
-
     
 class TripletLossDatasetFromPandasDataFrame(Dataset):
     def __init__(self,
@@ -191,61 +233,63 @@ class TripletLossDatasetFromPandasDataFrame(Dataset):
                 anchor_len,
                 positive_len,
                 negative_len)
+    
+class AuthentificationDatasetFromPandasDataFrame(Dataset):
+    def __init__(self,
+                 df: pd.DataFrame,
+                 label_col_name: str='participant_id',
+                 max_length: int=128,
+                 features_col_names: List[str]=['keycode_ids', 'hl', 'il', 'pl', 'rl'],
+                 num_gallery_samples: int=10,
+                 num_impostor_samples: int=100000):
+        self.df = df
+        self.num_gallery_samples = num_positive_samples
+        self.num_impostor_samples = num_negative_samples
+        self.max_length = max_length
+        
+        self.label_col_name = label_col_name
+        self.features_col_names = features_col_names
+        self.labels = df[label_col_name].values
+        self.indexes = df.index.values
+        
+    def _getitem(self, idx):
+        label = torch.tensor(self.df.iloc[idx][self.label_col_name])
+        features = torch.tensor(np.stack(self.df.iloc[idx][self.features_col_names], axis=0), dtype=torch.float32)
+        if features.shape[1] > self.max_length:
+            features = features[:, :self.max_length]
+        
+        features_len = features.shape[1]
+        return label, features, features_len
+        
+    def _sample_authentification_ids(self, idx):
+        '''
+        Function to sample 
+        '''
+        positive_ids = self.indexes[(self.labels == self.labels[idx])
+                                   &(self.indexes != idx )]
+        
+        gallery_ids = np.random.choice(positive_ids, size=self.num_gallery_samples-1)
+        gallery_ids = gallery_ids.append(idx)
+        
+        genuine_ids = np.array((list(set(positive_ids) - set(genuine_ids))))
+        
+        impostor_labels = np.unique(self.indexes[self.labels != self.labels[idx]])
+        if self.num_impostor_samples < len(impostor_labels):
+            impostor_labels = np.random.choice(impostor_labels, self.num_impostor_samples)
+        
+        impostor_ids = []
+        for _label in impostor_labels:
+            impostor_ids.append(np.random.choice(self.indexes[self.labels == _label]))
+        impostor_ids = np.array(impostor_ids)
+        
+        return gallery_ids, genuine_ids, impostor_ids
+            
+    def __getitem__(self,
+                    idx):
+        return self._getitem(idx)
+    
+    
         
         
         
-def bucket_collate_fn(data, n_features=5):
-    def _reshape_features(data, pos, features, max_len):
-        for i in range(len(data)):
-            j, k = data[i][pos].size(0), data[i][pos].size(1)
-            features[i] = torch.cat([data[i][pos], torch.zeros((j, max_len - k))], dim=-1)
-
-        return features
-    '''
-    data = List[dict]
-    '''
-    (_,
-     _,
-     _,
-     anchor_len,
-     positive_len,
-     negative_len) = zip(*data)
-    
-    anchor_max_len = max(anchor_len)
-    positive_max_len = max(positive_len)
-    negative_max_len = max(negative_len)
-    
-    n_features = n_features
-    
-    anchor_features = torch.zeros((len(data), n_features, anchor_max_len))
-    positive_features = torch.zeros((len(data), n_features, positive_max_len))
-    negative_features = torch.zeros((len(data),  n_features, negative_max_len))
-    
-    anchor_pos, positive_pos, negative_pos = 0, 1, 2
-    #for i in range(len(data)):
-    #    j, k = data[i][anchor_pos].size(0), data[i][anchor_pos].size(1)
-    #    anchor_features[i] = torch.cat([data[i][achor_pos], torch.zeros((anchor_max_len - j, k))])
-     
-    anchor_features = _reshape_features(data, anchor_pos, anchor_features, anchor_max_len)
-    positive_features = _reshape_features(data, positive_pos, positive_features, positive_max_len)
-    negative_features = _reshape_features(data, negative_pos, negative_features, negative_max_len)
-    
-    
-    anchor_len = torch.tensor(anchor_len)
-    positive_len = torch.tensor(positive_len)
-    negative_len = torch.tensor(negative_len)
-    
-    return (
-        anchor_features.float(),
-        positive_features.float(),
-        negative_features.float(),
-        anchor_len.long(),
-        positive_len.long(),
-        negative_len.long(),
-    )
-
-
-    
-    
-    
-    
+        
