@@ -29,5 +29,11 @@ model_params:
     dropout: 0.5
     max_length: 128
 loss_params:
-    margin: 1.5
+    margin: 1.
+    
+authentification:
+    num_gallery_samples: 10
+    num_genuine_samples: 5
+    num_impostor_samples: 100
+    
     

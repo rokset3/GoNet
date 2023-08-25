@@ -1,6 +1,12 @@
 import torch
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+from typing import Tuple
 from einops import rearrange
+from pandarallel import pandarallel
 
+from classes.datasets import AuthentificationDatasetFromPandasDataFrame, bucket_collate_fn_for_authentification
 
 class Inference:
     def __init__(self,
@@ -9,6 +15,7 @@ class Inference:
                  config,
                  device,
                  ):
+        model.eval()
         self.model = model.to(device)
         self.dataloader = dataloader
         self.config = config
@@ -41,9 +48,71 @@ class Inference:
     
 class AuthentificationEvaluator:
     def __init__(self,
-                 model: Inference,
-                 test_ds,
-                 evaluation_config):
+                # model: Inference,
+                 dataset: AuthentificationDatasetFromPandasDataFrame,
+                 config):
+#        self.model = model
+        self.dataset = dataset
+        self.config = config
+        
+        self.samples_df = pd.DataFrame()
+        self._collect_samples()
+        
+        
+    def _sample_funct(self, label):
+        gallery, genuine, impostor = self.dataset._sample_authentification_ids(
+                label,
+                num_gallery_samples=self.config['authentification']['num_gallery_samples'],
+                num_impostor_samples=self.config['authentification']['num_impostor_samples']
+            )
+        return dict(
+                gallery_ids = gallery,
+                genuine_ids = genuine,
+                impostor_ids = impostor
+            )
+        
+    
+    
+    def _collect_samples(self):
+        from pandarallel import pandarallel
+        pandarallel.initialize(progress_bar=True)
+        self.samples_df['participant_ids'] = np.unique(self.dataset.labels) 
+        self.samples_df['sampled_ids'] = self.samples_df['participant_ids'].parallel_apply(self._sample_funct)
+        
+    def get_dataset_per_participant(self, participant_id):
+        curr_sample = self.samples_df[self.samples_df['participant_ids'] == participant_id]
+        idxs = np.concatenate([curr_sample['samples_ids']['gallery_ids'],
+                               curr_sample['samples_ids']['genuine_ids'],
+                               curr_sample['samples_ids']['impostor_ids']], axis=0)
+        gal = self.config['authentification']['num_gallery_samples']
+        gen = self.config['authentification']['num_genuine_samples']
+        imp = self.config['authentification']['num_impostor_samples']
+        labels = np.zeros(idxs.shape)
+        labels[: gal] = 0.0                 # gallery labels
+        labels[gal: gal + gen] = 1.0        # genuine labels
+        labels[gal + gen: ] = -1.0          # impostor labels
+        
+        df = self.dataset.df.iloc[idxs]
+        df['labels'] = labels
+        
+        ds = AuthentificationDatasetFromPandasDataFrame(df)
+        return ds
+        
+    
+        
+        
+        
+        
+        
+        
+    
+        
+    
+        
+    
+        
+        
+        
         
         
     

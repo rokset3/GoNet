@@ -60,6 +60,32 @@ def bucket_collate_fn(data, n_features=5):
         negative_len.long(),
     )
 
+def bucket_collate_fn_for_authentification(data, n_features=5):
+    def _reshape_features(data, pos, features, max_len):
+        for i in range(len(data)):
+            j, k = data[i][pos].size(0), data[i][pos].size(1)
+            features[i] = torch.cat([data[i][pos], torch.zeros((j, max_len - k))], dim=-1)
+
+        return features
+    '''
+    data = List[dict]
+    '''
+    labels, _, seq_len = zip(*data)
+    max_len = max(seq_len)
+    n_features = n_features
+    
+    features = torch.zeros((len(data), n_features, max_len))
+    features_pos = 1
+    features = _reshape_features(data, features_pos, features, max_len)
+    
+    seq_len = torch.tensor(seq_len)
+    labels = torch.tensor(labels)
+    return (
+        labels.long(),
+        features.float(),
+        seq_len.long(),
+    )
+
 def get_dataset_for_bucketing(config, split='train', sample=None):
     ds = load_dataset(config['dataset_path'], split=split)
     if sample is not None:
@@ -240,11 +266,8 @@ class AuthentificationDatasetFromPandasDataFrame(Dataset):
                  label_col_name: str='participant_id',
                  max_length: int=128,
                  features_col_names: List[str]=['keycode_ids', 'hl', 'il', 'pl', 'rl'],
-                 num_gallery_samples: int=10,
-                 num_impostor_samples: int=100000):
+                ):
         self.df = df
-        self.num_gallery_samples = num_positive_samples
-        self.num_impostor_samples = num_negative_samples
         self.max_length = max_length
         
         self.label_col_name = label_col_name
@@ -261,21 +284,17 @@ class AuthentificationDatasetFromPandasDataFrame(Dataset):
         features_len = features.shape[1]
         return label, features, features_len
         
-    def _sample_authentification_ids(self, idx):
+    def _sample_authentification_ids(self, anchor_label, num_gallery_samples, num_impostor_samples):
         '''
         Function to sample 
         '''
-        positive_ids = self.indexes[(self.labels == self.labels[idx])
-                                   &(self.indexes != idx )]
+        positive_ids = self.indexes[self.labels == anchor_label]
+        gallery_ids = np.random.choice(positive_ids, size=num_gallery_samples, replace=False)
+        genuine_ids = np.array((list(set(positive_ids) - set(gallery_ids))))
         
-        gallery_ids = np.random.choice(positive_ids, size=self.num_gallery_samples-1)
-        gallery_ids = gallery_ids.append(idx)
-        
-        genuine_ids = np.array((list(set(positive_ids) - set(genuine_ids))))
-        
-        impostor_labels = np.unique(self.indexes[self.labels != self.labels[idx]])
-        if self.num_impostor_samples < len(impostor_labels):
-            impostor_labels = np.random.choice(impostor_labels, self.num_impostor_samples)
+        impostor_labels = np.unique(self.labels[self.labels != anchor_label])
+        if num_impostor_samples < len(impostor_labels):
+            impostor_labels = np.random.choice(impostor_labels, num_impostor_samples, replace=False)
         
         impostor_ids = []
         for _label in impostor_labels:
@@ -287,6 +306,7 @@ class AuthentificationDatasetFromPandasDataFrame(Dataset):
     def __getitem__(self,
                     idx):
         return self._getitem(idx)
+
     
     
         
