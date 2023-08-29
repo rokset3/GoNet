@@ -70,21 +70,30 @@ def bucket_collate_fn_for_authentification(data, n_features=5):
     '''
     data = List[dict]
     '''
-    labels, _, seq_len = zip(*data)
+    authentification_label, labels, _, seq_len = zip(*data)
     max_len = max(seq_len)
     n_features = n_features
     
     features = torch.zeros((len(data), n_features, max_len))
-    features_pos = 1
+    features_pos = 2
     features = _reshape_features(data, features_pos, features, max_len)
     
+    authentification_label = torch.tensor(authentification_label)
     seq_len = torch.tensor(seq_len)
     labels = torch.tensor(labels)
     return (
+        authentification_label.long(),
         labels.long(),
         features.float(),
         seq_len.long(),
     )
+
+def get_dataloader_general(ds, config, collate_fn):
+    return DataLoader(ds,
+                      batch_size=config['authentification']['batch_size'],
+                      shuffle=False,
+                      collate_fn=collate_fn,
+                      num_workers=config['authentification']['dataloader_num_workers'])
 
 def get_dataset_for_bucketing(config, split='train', sample=None):
     ds = load_dataset(config['dataset_path'], split=split)
@@ -306,6 +315,64 @@ class AuthentificationDatasetFromPandasDataFrame(Dataset):
     def __getitem__(self,
                     idx):
         return self._getitem(idx)
+    
+    def __len__(self):
+        return len(self.df)
+
+    
+    
+class GoNetDatasetFromPandasDataFrame(Dataset):
+    def __init__(self,
+                 df: pd.DataFrame,
+                 label_col_name: str='participant_id',
+                 authentification_label_col_name: str='label',
+                 max_length: int=128,
+                 features_col_names: List[str]=['keycode_ids', 'hl', 'il', 'pl', 'rl'],
+                ):
+        self.df = df
+        self.max_length = max_length
+        
+        self.label_col_name = label_col_name
+        self.authentification_label_col_name = authentification_label_col_name
+        self.features_col_names = features_col_names
+        self.labels = df[label_col_name].values
+        self.indexes = df.index.values
+        
+    def _getitem(self, idx):
+        label = torch.tensor(self.df.iloc[idx][self.label_col_name])
+        authentification_label = torch.tensor(self.df.iloc[idx][self.authentification_label_col_name])
+        features = torch.tensor(np.stack(self.df.iloc[idx][self.features_col_names], axis=0), dtype=torch.float32)
+        if features.shape[1] > self.max_length:
+            features = features[:, :self.max_length]
+        
+        features_len = features.shape[1]
+        return authentification_label, label, features, features_len
+        
+    def _sample_authentification_ids(self, anchor_label, num_gallery_samples, num_impostor_samples):
+        '''
+        Function to sample 
+        '''
+        positive_ids = self.indexes[self.labels == anchor_label]
+        gallery_ids = np.random.choice(positive_ids, size=num_gallery_samples, replace=False)
+        genuine_ids = np.array((list(set(positive_ids) - set(gallery_ids))))
+        
+        impostor_labels = np.unique(self.labels[self.labels != anchor_label])
+        if num_impostor_samples < len(impostor_labels):
+            impostor_labels = np.random.choice(impostor_labels, num_impostor_samples, replace=False)
+        
+        impostor_ids = []
+        for _label in impostor_labels:
+            impostor_ids.append(np.random.choice(self.indexes[self.labels == _label]))
+        impostor_ids = np.array(impostor_ids)
+        
+        return gallery_ids, genuine_ids, impostor_ids
+            
+    def __getitem__(self,
+                    idx):
+        return self._getitem(idx)
+    
+    def __len__(self):
+        return len(self.df)
 
     
     
