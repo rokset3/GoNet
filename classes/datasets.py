@@ -284,6 +284,8 @@ class AuthentificationDatasetFromPandasDataFrame(Dataset):
         self.labels = df[label_col_name].values
         self.indexes = df.index.values
         
+        self.unique_labels_indexes = df.drop_duplicates(subset=['participant_id'], keep='first').participant_id
+        
     def _getitem(self, idx):
         label = torch.tensor(self.df.iloc[idx][self.label_col_name])
         features = torch.tensor(np.stack(self.df.iloc[idx][self.features_col_names], axis=0), dtype=torch.float32)
@@ -309,6 +311,17 @@ class AuthentificationDatasetFromPandasDataFrame(Dataset):
         for _label in impostor_labels:
             impostor_ids.append(np.random.choice(self.indexes[self.labels == _label]))
         impostor_ids = np.array(impostor_ids)
+        
+        return gallery_ids, genuine_ids, impostor_ids
+    
+    def _get_same_idx(self, curr_idx):
+        return list(range(curr_idx//15 * 15, (curr_idx//15 + 1) * 15))
+    
+    def _sample_authentification_ids_v2(self, anchor_label, anchor_index, num_gallery_samples, num_impostor_samples):
+        positive_ids = self._get_same_idx(anchor_index)
+        gallery_ids = np.random.choice(positive_ids, size=num_gallery_samples, replace=False)
+        genuine_ids = np.array((list(set(positive_ids) - set(gallery_ids))))
+        impostor_ids = np.random.choice(self.indexes[self.labels != anchor_label], num_impostor_samples, replace=False)
         
         return gallery_ids, genuine_ids, impostor_ids
             
@@ -374,9 +387,7 @@ class GoNetDatasetFromPandasDataFrame(Dataset):
     def __len__(self):
         return len(self.df)
 
+class DatasetForEffectiveSamplingFromDataFrame:
+    def __init__(self, df):
+         
     
-    
-        
-        
-        
-        

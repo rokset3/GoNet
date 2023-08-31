@@ -54,7 +54,13 @@ class AuthentificationEvaluator:
         self.config = config
         self.device = config['authentification']['device']
         self.samples_df = pd.DataFrame()
-        self._collect_samples()
+        if self.config['authentification']['sampling_algo'] == 'v1':
+            self._collect_samples()
+        if self.config['authentification']['sampling_algo'] =='v2':
+            self._collect_samples_v2()
+            
+        
+        
         self.predictor = Predictor(model, config, config['authentification']['device'])
         
     def _sample_funct(self, label):
@@ -68,6 +74,32 @@ class AuthentificationEvaluator:
                 genuine_ids = genuine,
                 impostor_ids = impostor
             )
+    def _sample_funct_v2(self, col):
+        label, index = col['participant_ids'], col['indexes_from_dataset']
+        gallery, genuine, impostor = self.dataset._sample_authentification_ids_v2(
+                label,
+                index,
+                num_gallery_samples=self.config['authentification']['num_gallery_samples'],
+                num_impostor_samples=self.config['authentification']['num_impostor_samples']
+            )
+        return dict(
+                gallery_ids = gallery,
+                genuine_ids = genuine,
+                impostor_ids = impostor
+            )
+    
+    def _collect_samples_v2(self):
+        self.samples_df['participant_ids'] = self.dataset.unique_labels_indexes.values
+        self.samples_df['indexes_from_dataset'] = self.dataset.unique_labels_indexes.index.values
+        
+        if self.config['authentification']['parallel_sampling']:
+            from pandarallel import pandarallel
+            pandarallel.initialize(progress_bar=True) 
+            self.samples_df['sampled_ids'] = self.samples_df.parallel_apply(self._sample_funct_v2, axis=1)
+        else:
+            from tqdm import tqdm
+            tqdm.pandas()
+            self.samples_df['sampled_ids'] = self.samples_df.progress_apply(self._sample_funct_v2, axis=1)
     
     def _collect_samples(self):
         self.samples_df['participant_ids'] = np.unique(self.dataset.labels) 
@@ -160,7 +192,6 @@ class AuthentificationEvaluator:
     
     def get_results(self):
         return self.samples_df
-        
     
     
             

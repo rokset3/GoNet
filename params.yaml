@@ -39,3 +39,4 @@ authentification:
     batch_size: 4096
     dataloader_num_workers: 0
     device: 'cuda:0'
+    sampling_algo: 'v2'
